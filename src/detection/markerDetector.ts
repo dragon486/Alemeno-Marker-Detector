@@ -42,7 +42,7 @@ export const detectMarker = async (base64: string): Promise<DetectionResult | nu
   return null;
 };
 
-const analyzeFrame = (mat: Mat) => {
+export const analyzeFrame = (mat: Mat) => {
   const gray = OpenCV.createObject(ObjectType.Mat);
   OpenCV.invoke('cvtColor', mat, gray, ColorConversionCodes.COLOR_RGBA2GRAY);
 

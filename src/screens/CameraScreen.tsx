@@ -6,7 +6,7 @@ import RNFS from 'react-native-fs';
 import MarkerHighlight from '../components/MarkerHighlight';
 import ViewfinderOverlay from '../components/ViewfinderOverlay';
 import { detectMarker } from '../detection/markerDetector';
-import { isDuplicate } from '../utils/deduplication';
+import { isUnique } from '../utils/deduplication';
 
 const CameraScreen = () => {
   const device = useCameraDevice('back');
@@ -42,7 +42,7 @@ const CameraScreen = () => {
         const base64 = await RNFS.readFile(photo.path, 'base64');
         const result = await detectMarker(base64);
 
-        if (result && !isDuplicate(result.hash, markers.map(m => m.hash))) {
+        if (result && isUnique(result.hash, markers.map(m => m.hash))) {
           setIsDetected(true);
           setHighlight(result.bounds);
           
