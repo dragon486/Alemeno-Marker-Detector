@@ -1,5 +1,7 @@
 # Marker Detection Approach - Almeno Technical Assignment
 
+**Repository**: [https://github.com/dragon486/Alemeno-Marker-Detector](https://github.com/dragon486/Alemeno-Marker-Detector)
+
 ## 1. Executive Summary
 This project implements a high-performance marker detection system using React Native. The primary goal was to achieve sub-3000ms scan-to-result times with high orientation robustness and geometric accuracy.
 
