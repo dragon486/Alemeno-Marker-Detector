@@ -14,7 +14,6 @@
     "@react-native/new-app-screen": "0.85.2",
     "@react-navigation/native": "6.1.18",
     "@react-navigation/stack": "6.4.1",
-    "@shopify/react-native-skia": "0.1.241",
     "react": "19.2.3",
     "react-native": "0.85.2",
     "react-native-fast-opencv": "^0.4.8",
@@ -23,8 +22,7 @@
     "react-native-permissions": "3.10.1",
     "react-native-safe-area-context": "^5.7.0",
     "react-native-screens": "^4.24.0",
-    "react-native-vision-camera": "^4.7.3",
-    "vision-camera-resize-plugin": "^3.2.0"
+    "react-native-vision-camera": "^4.7.3"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
