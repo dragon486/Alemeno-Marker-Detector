@@ -1,85 +1,107 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Camera, useCameraDevice, useCameraFormat } from 'react-native-vision-camera';
-import { useMarkerFrameProcessor } from '../detection/frameProcessor';
-import ViewfinderOverlay from '../components/ViewfinderOverlay';
-import MarkerHighlight from '../components/MarkerHighlight';
+import { StyleSheet, View, Text, TouchableOpacity, Alert } from 'react-native';
+import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import { useNavigation } from '@react-navigation/native';
 import RNFS from 'react-native-fs';
+import MarkerHighlight from '../components/MarkerHighlight';
+import ViewfinderOverlay from '../components/ViewfinderOverlay';
+import { detectMarker } from '../detection/markerDetector';
+import { isDuplicate } from '../utils/deduplication';
 
-interface Props {
-  navigation: any;
-}
-
-const CameraScreen: React.FC<Props> = ({ navigation }) => {
+const CameraScreen = () => {
   const device = useCameraDevice('back');
-  const [markers, setMarkers] = useState<{ path: string; hash: string }[]>([]);
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const navigation = useNavigation<any>();
+  const camera = useRef<Camera>(null);
+
+  const [markers, setMarkers] = useState<{path: string, hash: string}[]>([]);
+  const [isDetected, setIsDetected] = useState(false);
   const [highlight, setHighlight] = useState<any>(null);
   const [startTime] = useState(Date.now());
-  const [isDetected, setIsDetected] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const format = useCameraFormat(device, [
-    { videoResolution: { width: 2160, height: 2160 } },
-    { fps: 30 }
-  ]);
+  useEffect(() => {
+    if (!hasPermission) requestPermission();
+  }, [hasPermission, requestPermission]);
 
-  const onMarkerDetected = useCallback((base64: string, hash: string, bounds: any) => {
-    setIsDetected(true);
-    setHighlight(bounds);
+  // Detection Loop (Snapshot-based)
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
     
-    // Clear highlight after 500ms
-    setTimeout(() => {
-      setIsDetected(false);
-      setHighlight(null);
-    }, 500);
+    const runDetection = async () => {
+      if (!camera.current || isProcessing || markers.length >= 20) return;
+      
+      try {
+        setIsProcessing(true);
+        const photo = await camera.current.takeSnapshot({
+          flash: 'off',
+          qualityPrioritization: 'speed',
+        });
 
-    const fileName = `marker_${Date.now()}.jpg`;
-    const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
-    
-    RNFS.writeFile(path, base64, 'base64').then(() => {
-      setMarkers((prev) => {
-        if (prev.length >= 20) return prev;
-        const next = [...prev, { path, hash }];
-        if (next.length === 20) {
-          const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-          navigation.navigate('Results', { markers: next.map(m => m.path), duration });
+        // Read image and process
+        const base64 = await RNFS.readFile(photo.path, 'base64');
+        const result = await detectMarker(base64);
+
+        if (result && !isDuplicate(result.hash, markers.map(m => m.hash))) {
+          setIsDetected(true);
+          setHighlight(result.bounds);
+          
+          const fileName = `marker_${Date.now()}.jpg`;
+          const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
+          await RNFS.writeFile(path, result.image, 'base64');
+
+          setMarkers((prev) => {
+            const next = [...prev, { path, hash: result.hash }];
+            if (next.length === 20) {
+              const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+              navigation.navigate('Results', { markers: next.map(m => m.path), duration });
+            }
+            return next;
+          });
+
+          setTimeout(() => {
+            setIsDetected(false);
+            setHighlight(null);
+          }, 500);
         }
-        return next;
-      });
-    });
-  }, [navigation, startTime]);
+      } catch (e) {
+        console.error("Detection error:", e);
+      } finally {
+        setIsProcessing(false);
+      }
+    };
 
-  const frameProcessor = useMarkerFrameProcessor(onMarkerDetected, markers.map(m => m.hash));
+    interval = setInterval(runDetection, 300); // 3 samples per second
+    return () => clearInterval(interval);
+  }, [markers.length, isProcessing, navigation, startTime]);
 
-  if (!device) return <ActivityIndicator size="large" style={styles.loader} />;
+  if (!hasPermission) return <View style={styles.container}><Text>No Camera Permission</Text></View>;
+  if (!device) return <View style={styles.container}><Text>No Camera Device</Text></View>;
 
   return (
     <View style={styles.container}>
       <Camera
+        ref={camera}
         style={StyleSheet.absoluteFill}
         device={device}
         isActive={true}
-        format={format}
-        frameProcessor={frameProcessor}
-        frameProcessorFps={15}
+        photo={true}
       />
       
       <ViewfinderOverlay />
+      
       <MarkerHighlight bounds={highlight} />
 
-      <View style={styles.topBar}>
-        <View style={styles.pill}>
-          <Text style={styles.pillText}>
-            {isDetected ? 'Detected! ✓' : 'Scanning…'} {markers.length}/20
-          </Text>
-        </View>
+      <View style={styles.stats}>
+        <Text style={styles.statsText}>Collected: {markers.length}/20</Text>
       </View>
 
-      <View style={styles.bottomBar}>
-        <View style={styles.progressContainer}>
-          <View style={[styles.progressFill, { width: `${(markers.length / 20) * 100}%` }]} />
-        </View>
-        <Text style={styles.hint}>Auto-capturing unique markers</Text>
-      </View>
+      <TouchableOpacity 
+        style={styles.closeButton} 
+        onPress={() => navigation.goBack()}
+      >
+        <Text style={styles.closeText}>✕</Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -89,53 +111,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'black',
   },
-  loader: {
-    flex: 1,
-    backgroundColor: 'black',
-  },
-  topBar: {
+  stats: {
     position: 'absolute',
-    top: 60,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  pill: {
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    bottom: 40,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#333',
   },
-  pillText: {
-    color: '#00FFCC',
-    fontSize: 16,
+  statsText: {
+    color: 'white',
     fontWeight: 'bold',
+    fontSize: 18,
   },
-  bottomBar: {
+  closeButton: {
     position: 'absolute',
-    bottom: 50,
-    left: 20,
+    top: 50,
     right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  progressContainer: {
-    width: '100%',
-    height: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 10,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#00FFCC',
-  },
-  hint: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 14,
-  },
+  closeText: {
+    color: 'white',
+    fontSize: 24,
+  }
 });
 
 export default CameraScreen;

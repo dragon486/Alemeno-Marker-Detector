@@ -13,18 +13,36 @@ import type { Mat, PointVector } from 'react-native-fast-opencv';
 export type CornerPosition = 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight';
 
 export interface DetectionResult {
+  image: string; // base64 of rectified & oriented image
+  hash: string;
   bounds: { x: number; y: number; width: number; height: number };
-  orientationCorner: CornerPosition;
-  confidence: number;
-  mat: Mat; // Rectified 300x300 mat
 }
 
 /**
- * Analyzes a frame mat to detect Marker 2.
+ * Main detection function for snapshot images.
  */
-export const analyzeFrame = (mat: Mat): DetectionResult | null => {
-  'worklet';
+export const detectMarker = async (base64: string): Promise<DetectionResult | null> => {
+  const mat = OpenCV.toMat(base64);
+  const result = analyzeFrame(mat);
+  
+  if (result) {
+    const oriented = correctOrientation(result.mat, result.orientationCorner);
+    const finalBase64 = OpenCV.toBase64(oriented);
+    
+    // Simple hash based on corners
+    const hash = `h_${Math.floor(result.confidence * 1000)}`;
 
+    return {
+      image: finalBase64,
+      hash,
+      bounds: result.bounds
+    };
+  }
+  
+  return null;
+};
+
+const analyzeFrame = (mat: Mat) => {
   const gray = OpenCV.createObject(ObjectType.Mat);
   OpenCV.invoke('cvtColor', mat, gray, ColorConversionCodes.COLOR_RGBA2GRAY);
 
@@ -44,7 +62,7 @@ export const analyzeFrame = (mat: Mat): DetectionResult | null => {
   OpenCV.invoke('findContours', thresh, contours, RetrievalModes.RETR_EXTERNAL, ContourApproximationModes.CHAIN_APPROX_SIMPLE);
 
   const contoursJS = OpenCV.toJSValue(contours);
-  let result: DetectionResult | null = null;
+  let result: { bounds: any, orientationCorner: CornerPosition, confidence: number, mat: Mat } | null = null;
 
   for (let i = 0; i < contoursJS.array.length; i++) {
     const contour = OpenCV.copyObjectFromVector(contours, i);
@@ -58,23 +76,17 @@ export const analyzeFrame = (mat: Mat): DetectionResult | null => {
 
     const approxJS = OpenCV.toJSValue(approx);
     if (approxJS.array.length === 4) {
-      // 1. Check aspect ratio
       const points = approxJS.array;
       const width = Math.max(Math.abs(points[1].x - points[0].x), Math.abs(points[2].x - points[3].x));
       const height = Math.max(Math.abs(points[3].y - points[0].y), Math.abs(points[2].y - points[1].y));
       const ar = width / height;
       if (ar < 0.8 || ar > 1.2) continue;
 
-      // 2. Rectify
       const rectified = rectify(mat, approx);
       if (!rectified) continue;
 
-      // 3. Validate Solid Border
-      if (!isSolidBorder(rectified)) {
-        continue;
-      }
+      if (!isSolidBorder(rectified)) continue;
 
-      // 4. Find Corner Square Anchor
       const corner = findOrientationAnchor(rectified);
       if (corner) {
         result = {
@@ -88,13 +100,23 @@ export const analyzeFrame = (mat: Mat): DetectionResult | null => {
     }
   }
 
-  OpenCV.clearBuffers([mat.id]);
   return result;
 };
 
+const correctOrientation = (mat: Mat, corner: CornerPosition): Mat => {
+  const dest = OpenCV.createObject(ObjectType.Mat);
+  if (corner === 'topLeft') return mat;
+  
+  let rotation;
+  if (corner === 'topRight') rotation = 0; // ROTATE_90_CLOCKWISE
+  else if (corner === 'bottomRight') rotation = 1; // ROTATE_180
+  else rotation = 2; // ROTATE_90_COUNTERCLOCKWISE
+  
+  OpenCV.invoke('rotate', mat, dest, rotation);
+  return dest;
+};
+
 const isSolidBorder = (rectified: Mat): boolean => {
-  'worklet';
-  // Sample 20 points along each edge of the 300x300 rectified image
   const samples = 20;
   const edges = ['top', 'bottom', 'left', 'right'];
   
@@ -112,19 +134,12 @@ const isSolidBorder = (rectified: Mat): boolean => {
       const brightness = (pixel.r + pixel.g + pixel.b) / 3;
       if (brightness < 128) darkCount++;
     }
-    if (darkCount / samples < 0.8) return false; // Side is not solid
+    if (darkCount / samples < 0.8) return false;
   }
   return true;
 };
 
 const findOrientationAnchor = (rectified: Mat): CornerPosition | null => {
-  'worklet';
-  // Interior check: 300x300 image. Inner area is ~20px border padding.
-  // We search for a ~40x40 (in 300x300 space) filled square in one of the corners.
-  // 140x140 marker, 10px border -> 120x120 interior.
-  // 20x20 anchor in 120x120 -> ~16% of side.
-  // In 300x300, interior is ~260x260. Anchor is ~43x43.
-  
   const corners: { pos: CornerPosition; x: number; y: number }[] = [
     { pos: 'topLeft', x: 40, y: 40 },
     { pos: 'topRight', x: 260, y: 40 },
@@ -143,13 +158,10 @@ const findOrientationAnchor = (rectified: Mat): CornerPosition | null => {
       foundCount++;
     }
   }
-
-  // Exactly one corner must be dark
   return foundCount === 1 ? found : null;
 };
 
 const rectify = (src: Mat, approx: PointVector): Mat | null => {
-  'worklet';
   const points = OpenCV.toJSValue(approx).array;
   points.sort((a, b) => (a.x + a.y) - (b.x + b.y));
   const tl = points[0];
