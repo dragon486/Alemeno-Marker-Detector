@@ -29,6 +29,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
+          ./gradlew clean
           ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK
