@@ -25,9 +25,14 @@ allprojects {
         resolutionStrategy {
             force 'androidx.core:core:1.13.1'
             force 'androidx.core:core-ktx:1.13.1'
-            force 'com.facebook.react:react-android:0.74.5'
-            force 'com.facebook.react:react-native:0.74.5'
-            force 'com.facebook.react:hermes-android:0.74.5'
+            eachDependency { DependencyResolveDetails details ->
+                if (details.requested.group == 'com.facebook.react' && 
+                   (details.requested.name == 'react-android' || 
+                    details.requested.name == 'react-native' || 
+                    details.requested.name == 'hermes-android')) {
+                    details.useVersion "0.74.5"
+                }
+            }
         }
     }
     repositories {
