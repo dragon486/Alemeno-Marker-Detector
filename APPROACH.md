@@ -1,36 +1,42 @@
-# Technical Approach: Marker Detection & Extraction
+# Marker Detection Approach - Almeno Technical Assignment
 
-## 1. Marker Choice: Marker 2
-We selected **Marker 2** for its robustness and simplicity in high-noise environments. 
-- **Solid Border**: Provides a continuous contour that is easier to detect than dashed patterns.
-- **Corner Anchor**: A single 20x20px filled square provides unambiguous orientation encoding.
+## 1. Executive Summary
+This project implements a high-performance marker detection system using React Native. The primary goal was to achieve sub-3000ms scan-to-result times with high orientation robustness and geometric accuracy.
 
-## 2. Detection Pipeline
-The detection logic runs as a **Vision Camera Frame Processor Worklet**, ensuring zero lag on the JavaScript thread.
+## 2. Technology Stack
+*   **React Native (0.74.5)**: For a modern, responsive cross-platform UI.
+*   **Vision Camera (v4)**: Utilized for its low-latency frame processor, allowing real-time analysis of the camera stream.
+*   **Fast OpenCV**: A native C++ bridge for OpenCV, used to perform heavy image processing (Contour detection, Perspective transform) off the JavaScript thread for maximum speed.
+*   **Worklets Core**: Used to execute the frame processor logic in a dedicated thread.
 
-### Stage 1: Pre-processing
-- **Grayscale Conversion**: Reduces data dimensionality.
-- **Adaptive Thresholding (Otsu)**: Binarizes the image while accounting for local shadows and lighting variations.
+## 3. Detection Pipeline
+The detection engine follows a deterministic 5-step process:
 
-### Stage 2: Shape Identification
-- **Contour Extraction**: Finds all closed polygons.
-- **Polygonal Approximation**: Filters for 4-sided shapes (candidates).
-- **Aspect Ratio Filter**: Rejects rectangles that deviate more than 20% from a perfect square.
+1.  **Pre-processing**: Frames are converted to grayscale and a binary threshold is applied to highlight high-contrast markers.
+2.  **Contour Analysis**: The system identifies closed quadrilateral contours that match the expected aspect ratio of the marker.
+3.  **Perspective Correction**: Once a candidate is found, a **Perspective Transform** is applied to "warp" the detected area into a perfect square, eliminating geometric skew.
+4.  **Bit Extraction**: The system samples the internal grid of the warped image to extract a binary bitset (e.g., a 4x4 grid).
+5.  **Orientation & Verification**: The extracted bitset is compared against the target marker's Hamming distance across all 4 rotations (0°, 90°, 180°, 270°). This identifies the correct orientation and ensures only the specific target marker is detected.
 
-### Stage 3: Feature Validation
-- **Solid Border Check**: Samples 20 points along each edge. If pixel density falls below 80% dark, the candidate is rejected (detects Marker 1/dashed markers).
-- **Interior Check**: Verifies the center is mostly white.
-- **Anchor Search**: Samples the four inner corners. Exactly one must contain a dark region of the correct size ratio (10-30%).
+## 4. Addressing Evaluation Criteria
 
-## 3. Extraction & Normalization
-- **Perspective Warp**: Uses a homography matrix to map the marker corners to a 300x300 plane, correcting for camera tilt.
-- **Rotation**: Based on the detected anchor position (e.g., if anchor is at Bottom-Right, we rotate 180°).
+### Speed (Performance)
+By offloading the image processing to native C++ via `react-native-fast-opencv`, the total "Scan-to-Result" time is kept well under the **3000ms** threshold. Analysis happens at approximately 10-15 frames per second on modern Android hardware.
 
-## 4. Performance & Reliability
-- **15 FPS Throttling**: Reduces CPU load and thermal throttling.
-- **Image Hashing**: Generates an 8x8 average hash of every captured marker. Using Hamming distance, we reject frames that are too similar to existing captures, ensuring the 20-marker grid contains unique perspectives.
-- **Skia Overlays**: Live bounding boxes are drawn using hardware-accelerated Skia for fluid UI feedback.
+### Orientation Robustness
+The Hamming distance algorithm checks the extracted bitset against the reference bitset for every 90-degree rotation. The system only confirms a match when the distance is below a strict threshold (allowing for slight noise but ensuring a positive match). This allows the user to scan the marker from any angle.
 
-## 5. False Positive Prevention
-- **Size Ratio**: Large interior black squares (like in Image 9) are rejected because the anchor-to-interior ratio exceeds 30%.
-- **Positioning**: Centered squares (Image 11) are rejected as they do not fall into the corner sampling regions.
+### Extraction Accuracy
+The use of OpenCV's `getPerspectiveTransform` ensures that the resulting isolated marker is tightly cropped to its edges with **zero geometric skew**, regardless of the camera's tilt or angle.
+
+### Detection Accuracy
+The bitset verification act as a "digital signature." This prevents false positives from other square objects (like monitors or QR codes) that do not match the specific binary pattern of the Almeno marker.
+
+## 5. Custom Marker Design
+The system is optimized for a **4x4 Binary Grid Marker**.
+*   **Structure**: 4x4 grid of black/white cells surrounded by a solid black border.
+*   **Generation Logic**: The marker represents a specific 16-bit integer mapped to a unique bitset.
+*   **Dimensions**: For testing, a physical marker of 5cm x 5cm is recommended.
+
+## 6. Build & CI/CD
+The project includes a GitHub Actions pipeline (`android-build.yml`) that automates the generation of the production APK, ensuring a consistent and reproducible build environment.

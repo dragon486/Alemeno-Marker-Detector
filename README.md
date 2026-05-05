@@ -3,17 +3,18 @@
 A high-performance Android application built with React Native for detecting and extracting custom visual markers. Developed for the Alemeno Frontend Internship Assignment.
 
 ## 🚀 Features
-- **Real-time Detection**: Uses Vision Camera v3 Frame Processors + OpenCV.
-- **Marker 2 Support**: Optimized for solid-border markers with corner anchor squares.
-- **Orientation Correction**: Automatically rectifies and rotates markers to an upright 300x300px format.
-- **Deduplication**: Prevents duplicate captures using image hashing.
-- **High-Performance**: Off-thread processing ensures smooth 30fps camera preview.
+- **Real-time Detection**: Uses Vision Camera v4 Frame Processors + Fast OpenCV (C++).
+- **Sub-3000ms Scanning**: Optimized native pipeline for speed.
+- **Orientation Correction**: Automatically rectifies and rotates markers to an upright format using Hamming distance checks.
+- **Deduplication**: Prevents duplicate captures using spatial and temporal deduplication.
+- **High-Performance**: Off-thread processing ensures smooth camera preview.
 
 ## 🛠 Setup Instructions
 1. **Prerequisites**:
    - Node.js 18+
-   - Android Studio & SDK (minSdk 24)
+   - Android Studio & SDK (minSdk 24, TargetSdk 34)
    - JDK 17
+   - Kotlin 2.0.21
 
 2. **Install Dependencies**:
    ```bash
