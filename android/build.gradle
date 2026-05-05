@@ -27,6 +27,7 @@ allprojects {
             force 'androidx.core:core-ktx:1.13.1'
             force 'com.facebook.react:react-android:0.74.5'
             force 'com.facebook.react:react-native:0.74.5'
+            force 'com.facebook.react:hermes-android:0.74.5'
         }
     }
     repositories {
